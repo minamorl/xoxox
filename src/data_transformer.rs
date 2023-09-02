@@ -22,16 +22,20 @@ pub struct DataTransformer {
     to: Schema,
 }
 
+trait Transformable {
+    fn transform(&self, data: HashMap<String, String>) -> Result<HashMap<String, String>, String>;
+}
+
+impl Transformable for DataTransformer {
+    fn transform(&self, data: HashMap<String, String>) -> Result<HashMap<String, String>, String> {
+        Ok(data)
+    }
+}
 impl DataTransformer {
     pub fn new(from: Schema, to: Schema) -> Self {
         Self { from, to }
     }
 
-    pub fn transform(&self, data: HashMap<String, String>) -> Result<HashMap<String, String>, String> {
-        // Insert your transformation logic here
-        // For example, combine "field1" and "field2" to produce "field3"
-        Ok(data)  // Placeholder
-    }
 
     pub fn get_schema_names(&self, schema: &Schema, prefix: String) -> Vec<String> {
         let mut keys = Vec::new();
