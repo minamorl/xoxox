@@ -3,16 +3,20 @@ use sled::{Config, Db, IVec};
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 use serde_json::{to_vec, from_slice};
+use std::collections::HashSet;
+#[derive(Clone)]
 pub enum FieldType {
     StringType,
     // Add other types as needed
 }
 
+#[derive(Clone)]
 pub enum Schema {
     Simple(FieldType),
     Complex(HashMap<String, Schema>),
 }
 
+#[derive(Clone)]
 pub struct DataTransformer {
     from: Schema,
     to: Schema,
@@ -71,4 +75,71 @@ impl DataTransformer {
 pub struct Data {
     field1: String,
     field2: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sled::{Config, Db};
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_schema_names() {
+        let schema = Schema::Complex(
+            vec![
+                ("field1".to_string(), Schema::Simple(FieldType::StringType)),
+                ("field2".to_string(), Schema::Simple(FieldType::StringType))
+            ]
+            .into_iter()
+            .collect(),
+        );
+        let transformer = DataTransformer::new(schema.clone(), schema.clone());
+        let schema_names = transformer.get_schema_names(&schema, "".to_string());
+        assert_eq!(schema_names.into_iter().collect::<HashSet<_>>(), vec!["field1".to_string(), "field2".to_string()].into_iter().collect::<HashSet<_>>());
+    }
+
+    #[test]
+    fn test_data_transformation() {
+        let schema_from = Schema::Complex(
+            vec![
+                ("field1".to_string(), Schema::Simple(FieldType::StringType)),
+                ("field2".to_string(), Schema::Simple(FieldType::StringType))
+            ]
+            .into_iter()
+            .collect(),
+        );
+        let transformer = DataTransformer::new(schema_from.clone(), schema_from.clone());
+
+        let mut data = HashMap::new();
+        data.insert("field1".to_string(), "Data1".to_string());
+        data.insert("field2".to_string(), "Data2".to_string());
+
+        let transformed_data = transformer.transform(data.clone()).unwrap();
+        assert_eq!(transformed_data, data);
+    }
+    #[test]
+    fn test_sled_integration() -> sled::Result<()> {
+        let config = Config::new().temporary(true);
+        let db = config.open()?;
+        
+        let schema_from = Schema::Complex(
+            vec![
+                ("field1".to_string(), Schema::Simple(FieldType::StringType)),
+                ("field2".to_string(), Schema::Simple(FieldType::StringType))
+            ]
+            .into_iter()
+            .collect(),
+        );
+        let transformer = DataTransformer::new(schema_from.clone(), schema_from.clone());
+
+        let mut data = HashMap::new();
+        data.insert("field1".to_string(), "Data1".to_string());
+        data.insert("field2".to_string(), "Data2".to_string());
+
+        transformer.save_to_sled(&db, data.clone())?;
+        let loaded_data = transformer.load_from_sled(&db)?;
+
+        assert_eq!(loaded_data, data);
+        Ok(())
+    }
 }
