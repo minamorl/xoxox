@@ -1,30 +1,44 @@
+use sled::open;
 mod data_transformer;
+use data_transformer::*;
 
-use data_transformer::{persist, Field, Transformable, DataTransformer};
-use sled::Db;
-use serde::{Serialize, Deserialize};
+fn main() -> Result<(), TransformationError> {
+    // Open a sled database
+    let db = sled::open("my_db").map_err(TransformationError::DatabaseError)?;
 
-#[derive(Debug, Serialize, Deserialize)]
-struct Message {
-    sender_id: Field<i32>,
-    text: Field<String>,
-}
-
-fn main() -> sled::Result<()> {
-    let db = sled::open("demo_db")?;
-
-    let message = Message {
-        sender_id: Field::new("IntegerField".to_string(), 1),
-        text: Field::new("StringField".to_string(), "Hello, world!".to_string()),
+    // Create simple and composite fields
+    let simple_field = Field::Simple {
+        field_type: "Name".to_string(),
+        value: "John".to_string(),
     };
 
-    // Save to sled
-    message.to_sled(&db)?;
+    let composite_field = Field::Composite {
+        fields: vec![
+            Field::Simple {
+                field_type: "Age".to_string(),
+                value: "30".to_string(),
+            },
+            Field::Simple {
+                field_type: "Address".to_string(),
+                value: "123 Main St".to_string(),
+            },
+        ],
+    };
 
-    // Load from sled
-    let loaded_message: Message = Message::from_sled(&db, "message")?;
+    // Create a Transformable instance
+    let transformable = Transformable {
+        id: "person1".to_string(),
+        data: composite_field,
+    };
 
-    println!("Loaded Message: {:?}", loaded_message);
+    // Save the Transformable instance to the database
+    transformable.save_to_db(&db)?;
+
+    // Load the Transformable instance from the database
+    let loaded_transformable: Transformable<String> = Transformable::load_from_db(&db, "person1")?;
+
+    // Display the loaded Transformable instance
+    println!("Loaded Transformable: {:?}", loaded_transformable);
 
     Ok(())
 }

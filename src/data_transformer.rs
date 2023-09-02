@@ -1,5 +1,6 @@
 use sled::{Db};
-use serde::{Serialize, Deserialize, from_slice, to_vec, de::DeserializeOwned};
+use serde::{Serialize, Deserialize, de::DeserializeOwned};
+use serde_json::{to_vec, from_slice};
 use std::fmt::Debug;
 
 #[derive(Debug)]
@@ -11,21 +12,20 @@ pub enum TransformationError {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Field<T> {
-    pub field_type: String,
-    pub value: T,
-}
-
-impl<T> Field<T> {
-    pub fn new(field_type: String, value: T) -> Self {
-        Self { field_type, value }
-    }
+pub enum Field<T> {
+    Simple {
+        field_type: String,
+        value: T,
+    },
+    Composite {
+        fields: Vec<Field<T>>,
+    },
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct Transformable<T: Serialize + DeserializeOwned> {
+pub struct Transformable<T> {
     pub id: String,
-    pub data: T,
+    pub data: Field<T>,
 }
 
 pub trait Transform<Y> {
@@ -41,7 +41,7 @@ pub trait Persistable {
 
 impl<T: Serialize + DeserializeOwned> Persistable for Transformable<T> {
     fn save_to_db(&self, db: &Db) -> Result<(), TransformationError> {
-        let serialized = to_vec(&self.data).map_err(TransformationError::SerializationFailed)?;
+        let serialized = to_vec(&self).map_err(TransformationError::SerializationFailed)?;
         db.insert(&self.id, serialized).map_err(TransformationError::DatabaseError)?;
         Ok(())
     }
@@ -50,7 +50,7 @@ impl<T: Serialize + DeserializeOwned> Persistable for Transformable<T> {
         let stored_data = db.get(id).map_err(TransformationError::DatabaseError)?
             .ok_or_else(|| TransformationError::NotFound(id.to_string()))?;
         
-        let data: T = from_slice(&stored_data).map_err(TransformationError::DeserializationFailed)?;
-        Ok(Self { id: id.to_string(), data })
+        let transformable: Self = from_slice(&stored_data).map_err(TransformationError::DeserializationFailed)?;
+        Ok(transformable)
     }
 }
