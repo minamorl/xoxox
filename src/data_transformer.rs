@@ -1,56 +1,36 @@
-use sled::{Db};
-use serde::{Serialize, Deserialize, de::DeserializeOwned};
-use serde_json::{to_vec, from_slice};
-use std::fmt::Debug;
+use std::collections::HashMap;
+use serde::{Serialize, Deserialize};
+use std::error::Error;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TransformationError {
-    SerializationFailed(serde_json::Error),
-    DeserializationFailed(serde_json::Error),
-    DatabaseError(sled::Error),
-    NotFound(String),
+    InvalidType,
+    InvalidValue,
+    CustomError(String),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub enum Field<T> {
-    Simple {
-        field_type: String,
-        value: T,
-    },
-    Composite {
-        fields: Vec<Field<T>>,
-    },
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct Transformable<T> {
-    pub id: String,
-    pub data: Field<T>,
-}
-
-pub trait Transform<Y> {
-    fn transform(&self) -> Result<Y, TransformationError>;
-}
-
-pub trait Persistable {
-    fn save_to_db(&self, db: &Db) -> Result<(), TransformationError>;
-    fn load_from_db(db: &Db, id: &str) -> Result<Self, TransformationError>
+pub trait Applicable {
+    fn apply<F>(&mut self, func: F) -> Result<&mut Self, TransformationError>
     where
-        Self: Sized;
+        F: FnOnce(&mut Self) -> Result<(), TransformationError>;
 }
 
-impl<T: Serialize + DeserializeOwned> Persistable for Transformable<T> {
-    fn save_to_db(&self, db: &Db) -> Result<(), TransformationError> {
-        let serialized = to_vec(&self).map_err(TransformationError::SerializationFailed)?;
-        db.insert(&self.id, serialized).map_err(TransformationError::DatabaseError)?;
-        Ok(())
-    }
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum JsonValue {
+    Null,
+    Bool(bool),
+    Number(f64),
+    String(String),
+    Array(Vec<JsonValue>),
+    Object(HashMap<String, JsonValue>),
+}
 
-    fn load_from_db(db: &Db, id: &str) -> Result<Self, TransformationError> {
-        let stored_data = db.get(id).map_err(TransformationError::DatabaseError)?
-            .ok_or_else(|| TransformationError::NotFound(id.to_string()))?;
-        
-        let transformable: Self = from_slice(&stored_data).map_err(TransformationError::DeserializationFailed)?;
-        Ok(transformable)
+impl Applicable for JsonValue {
+    fn apply<F>(&mut self, func: F) -> Result<&mut Self, TransformationError>
+    where
+        F: FnOnce(&mut Self) -> Result<(), TransformationError>,
+    {
+        func(self)?;
+        Ok(self)
     }
 }
